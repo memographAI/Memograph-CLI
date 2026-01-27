@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "messages": [
+    { "idx": 0, "role": "user", "content": "My name is Alice" },
+    { "idx": 1, "role": "assistant", "content": "Nice to meet you, Alice!" },
+    { "idx": 2, "role": "user", "content": "Actually, I'm Bob" },
+    { "idx": 3, "role": "assistant", "content": "Oh, sorry Bob!" }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "messages": [
+    { "idx": 0, "role": "user", "content": "What is the weather today?" },
+    { "idx": 1, "role": "assistant", "content": "I don't have access to real-time weather data." },
+    { "idx": 2, "role": "user", "content": "Can you tell me what the weather is like today?" },
+    { "idx": 3, "role": "assistant", "content": "I cannot access weather information." },
+    { "idx": 4, "role": "user", "content": "What's the weather like right now?" },
+    { "idx": 5, "role": "assistant", "content": "I'm unable to check current weather conditions." }
+  ]
+}

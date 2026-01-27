@@ -1,0 +1,6 @@
+{
+  "messages": [
+    { "idx": 0, "role": "user", "content": "Hello" },
+    { "idx": 1, "role": "assistant", "content": "Hi there!" }
+  ]
+}

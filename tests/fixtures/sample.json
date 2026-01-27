@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "messages": [
+    { "idx": 0, "role": "user", "content": "My name is Tusher" },
+    { "idx": 1, "role": "assistant", "content": "Nice to meet you, Tusher!" },
+    { "idx": 2, "role": "user", "content": "Please reply in Bangla from now on" },
+    { "idx": 3, "role": "assistant", "content": "Sure, I'll use English." },
+    { "idx": 4, "role": "user", "content": "Reply in Bangla please (I told you before)" },
+    { "idx": 5, "role": "assistant", "content": "I'll use Bangla from now on." },
+    { "idx": 6, "role": "user", "content": "What is the weather today?" },
+    { "idx": 7, "role": "assistant", "content": "I don't have access to real-time weather data." },
+    { "idx": 8, "role": "user", "content": "Can you tell me what the weather is like today?" },
+    { "idx": 9, "role": "assistant", "content": "I cannot access weather information." },
+    { "idx": 10, "role": "user", "content": "What's the weather like right now?" },
+    { "idx": 11, "role": "assistant", "content": "I'm unable to check current weather conditions." }
+  ]
+}
