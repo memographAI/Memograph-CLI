@@ -32,6 +32,8 @@ export interface Transcript {
   schema_version: string;
   /** Array of messages in conversation order */
   messages: TranscriptMessage[];
+  /** Optional raw transcript content for non-JSON inputs */
+  raw_text?: string;
 }
 
 /**

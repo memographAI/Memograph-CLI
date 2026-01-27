@@ -52,6 +52,26 @@ Respond with JSON containing the facts array.`;
 }
 
 /**
+ * User prompt for fact extraction from raw text
+ */
+export function createFactExtractionPromptFromRaw(rawText: string): string {
+  return `Extract all important facts and preferences from the following transcript text.
+
+The content may not be structured as messages. Infer user facts and preferences from the text.
+
+Focus on:
+- Identity (name, role, etc.)
+- Preferences (language, tone, format, style)
+- Context (goals, constraints, requirements)
+- Important facts that should be remembered
+
+Transcript text:
+${rawText}
+
+Respond with JSON containing the facts array.`;
+}
+
+/**
  * System prompt for drift detection
  */
 export const DRIFT_DETECTION_SYSTEM = `You are an expert at analyzing conversation transcripts for memory drift issues.
@@ -118,6 +138,33 @@ Look for:
 6. Assistant acting inconsistently with stated preferences (inconsistent_behavior)
 
 Provide message indices (0-based) for each event.
+
+Respond with JSON containing the events array.`;
+}
+
+/**
+ * User prompt for drift detection from raw text
+ */
+export function createDriftDetectionPromptFromRaw(rawText: string, facts: string): string {
+  return `Analyze the following transcript text for memory drift events.
+
+The content may not be structured as messages. Use best judgment to identify drift patterns.
+
+Transcript text:
+${rawText}
+
+Important facts extracted from the transcript:
+${facts || "No facts extracted"}
+
+Look for:
+1. User repeating similar requests (repetition_cluster)
+2. Assistant indicating starting over or forgetting (session_reset)
+3. User restating preferences that were previously stated (preference_forgotten)
+4. Contradictions in information (contradiction)
+5. Assistant losing important context (context_loss)
+6. Assistant acting inconsistently with stated preferences (inconsistent_behavior)
+
+If message indices are unknown, set msg_idxs to an empty array.
 
 Respond with JSON containing the events array.`;
 }

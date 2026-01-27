@@ -7,6 +7,7 @@ import { LLMClient } from './client.js';
 import {
   FACT_EXTRACTION_SYSTEM,
   createFactExtractionPrompt,
+  createFactExtractionPromptFromRaw,
 } from './prompts.js';
 
 export interface ExtractFactsLLMResult {
@@ -90,6 +91,62 @@ export async function extractFactsLLM(
 
     return {
       facts: mappedFacts,
+      timing_ms: performance.now() - start,
+      usage: response.usage,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`LLM fact extraction failed: ${errorMessage}`);
+  }
+}
+
+/**
+ * Extract facts from raw transcript text using LLM
+ */
+export async function extractFactsLLMFromRaw(
+  rawText: string,
+  llmClient: LLMClient
+): Promise<ExtractFactsLLMResult> {
+  const start = performance.now();
+
+  if (!rawText || rawText.trim().length === 0) {
+    return {
+      facts: [],
+      timing_ms: performance.now() - start,
+    };
+  }
+
+  try {
+    const prompt = createFactExtractionPromptFromRaw(rawText);
+    const response = await llmClient.complete(prompt, FACT_EXTRACTION_SYSTEM);
+
+    let llmResponse;
+    try {
+      llmResponse = JSON.parse(response.content);
+    } catch (parseError) {
+      throw new Error(
+        `Failed to parse LLM response as JSON: ${(parseError as Error).message}\n` +
+        `Response content: ${response.content.substring(0, 200)}...`
+      );
+    }
+
+    if (!llmResponse || typeof llmResponse !== 'object') {
+      throw new Error('LLM response is not a valid object');
+    }
+
+    if (!Array.isArray(llmResponse.facts)) {
+      throw new Error('LLM response does not contain a facts array');
+    }
+
+    const facts: ExtractedFact[] = llmResponse.facts.map((fact: any) => ({
+      fact_key: fact.fact_key,
+      fact_value: fact.fact_value,
+      msg_idx: 0,
+      confidence: fact.confidence || 0.5,
+    }));
+
+    return {
+      facts,
       timing_ms: performance.now() - start,
       usage: response.usage,
     };

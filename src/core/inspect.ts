@@ -1,8 +1,8 @@
 import { Transcript, InspectResult, InspectConfig, Timings } from './types.js';
 import { calculateDriftScore, calculateTokenWaste } from './score.js';
 import { createLLMClient } from './llm/client.js';
-import { extractFactsLLM, extractFactsLLMBatched } from './llm/extract-llm.js';
-import { detectDriftLLM, detectDriftLLMBatched } from './llm/detect-llm.js';
+import { extractFactsLLM, extractFactsLLMBatched, extractFactsLLMFromRaw } from './llm/extract-llm.js';
+import { detectDriftLLM, detectDriftLLMBatched, detectDriftLLMFromRaw } from './llm/detect-llm.js';
 
 /**
  * Main inspection pipeline (LLM-based)
@@ -13,6 +13,7 @@ export async function inspectTranscript(
   config: InspectConfig = {}
 ): Promise<InspectResult> {
   const { messages } = transcript;
+  const rawText = transcript.raw_text;
 
   // Cap messages if configured
   const cappedMessages = config.max_messages
@@ -28,7 +29,9 @@ export async function inspectTranscript(
   let extractResult;
   
   // Use batching for large transcripts
-  if (cappedMessages.length > 50) {
+  if (rawText) {
+    extractResult = await extractFactsLLMFromRaw(rawText, llmClient);
+  } else if (cappedMessages.length > 50) {
     extractResult = await extractFactsLLMBatched(cappedMessages, llmClient);
   } else {
     extractResult = await extractFactsLLM(cappedMessages, llmClient);
@@ -42,7 +45,9 @@ export async function inspectTranscript(
   let driftResult;
   
   // Use batching for large transcripts
-  if (cappedMessages.length > 100) {
+  if (rawText) {
+    driftResult = await detectDriftLLMFromRaw(rawText, facts, llmClient);
+  } else if (cappedMessages.length > 100) {
     driftResult = await detectDriftLLMBatched(cappedMessages, facts, llmClient);
   } else {
     driftResult = await detectDriftLLM(cappedMessages, facts, llmClient);
@@ -75,7 +80,7 @@ export async function inspectTranscript(
     raw_score = calculated.raw_score;
   }
   
-  const token_waste_pct = calculateTokenWaste(cappedMessages, events);
+  const token_waste_pct = rawText ? 0 : calculateTokenWaste(cappedMessages, events);
 
   // Prepare "should have been memory" facts (top by confidence)
   const should_have_been_memory = [...facts]

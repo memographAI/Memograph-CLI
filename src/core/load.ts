@@ -14,7 +14,20 @@ export async function loadTranscript(path: string, maxMessages?: number): Promis
       throw new Error(`Transcript file not found: ${path}`);
     }
     if (error instanceof SyntaxError) {
-      throw new Error(`Invalid JSON in transcript file: ${path}`);
+      const content = await readFile(path, 'utf-8');
+      return {
+        schema_version: 'raw',
+        messages: [],
+        raw_text: content,
+      };
+    }
+    if (error instanceof Error && error.message.includes('Invalid transcript')) {
+      const content = await readFile(path, 'utf-8');
+      return {
+        schema_version: 'raw',
+        messages: [],
+        raw_text: content,
+      };
     }
     throw error;
   }

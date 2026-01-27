@@ -15,6 +15,7 @@ import { LLMClient } from './client.js';
 import {
   DRIFT_DETECTION_SYSTEM,
   createDriftDetectionPrompt,
+  createDriftDetectionPromptFromRaw,
 } from './prompts.js';
 
 export interface DetectDriftLLMResult {
@@ -84,6 +85,63 @@ export async function detectDriftLLM(
     // Map to DriftEvent types
     const events: DriftEvent[] = rawEvents.map((event: any) => 
       mapLLMEventToDriftEvent(event, messages)
+    );
+
+    return {
+      events,
+      drift_score,
+      timing_ms: performance.now() - start,
+      usage: response.usage,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`LLM drift detection failed: ${errorMessage}`);
+  }
+}
+
+/**
+ * Detect drift events from raw transcript text using LLM
+ */
+export async function detectDriftLLMFromRaw(
+  rawText: string,
+  facts: ExtractedFact[],
+  llmClient: LLMClient
+): Promise<DetectDriftLLMResult> {
+  const start = performance.now();
+
+  const formattedFacts = facts.length > 0
+    ? facts.map(f => `- ${f.fact_key} = ${f.fact_value} (confidence: ${f.confidence})`).join('\n')
+    : 'No facts extracted';
+
+  try {
+    const prompt = createDriftDetectionPromptFromRaw(rawText, formattedFacts);
+    const response = await llmClient.complete(prompt, DRIFT_DETECTION_SYSTEM);
+
+    let llmResponse;
+    try {
+      llmResponse = JSON.parse(response.content);
+    } catch (parseError) {
+      throw new Error(
+        `Failed to parse LLM response as JSON: ${(parseError as Error).message}\n` +
+        `Response content: ${response.content.substring(0, 200)}...`
+      );
+    }
+
+    if (!llmResponse || typeof llmResponse !== 'object') {
+      throw new Error('LLM response is not a valid object');
+    }
+
+    if (!Array.isArray(llmResponse.events)) {
+      throw new Error('LLM response does not contain an events array');
+    }
+
+    let drift_score: number | undefined = undefined;
+    if (typeof llmResponse.drift_score === 'number') {
+      drift_score = Math.max(0, Math.min(100, llmResponse.drift_score));
+    }
+
+    const events: DriftEvent[] = llmResponse.events.map((event: any) =>
+      mapLLMEventToDriftEvent(event, [])
     );
 
     return {
