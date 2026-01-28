@@ -11,7 +11,7 @@ import {
   getProviderInfo,
   isOpenAICompatible,
 } from '../core/llm/providers.js';
-import { ask, selectMenu, createRL, ensureStdinReady } from './index.js';
+import { ask, askMasked, selectMenu, createRL, ensureStdinReady } from './index.js';
 
 const CLOUD_PROVIDERS: LLMProvider[] = [
   'openai',
@@ -150,9 +150,7 @@ export async function runSetupWizard(currentSettings: Settings): Promise<Setting
         settings.llm.apiKey = currentKey;
       } else {
         await ensureStdinReady();
-        const rl2 = createRL();
-        const newKey = await ask(rl2, `Enter ${providerLabel} API key: `);
-        rl2.close();
+        const newKey = await askMasked(`Enter ${providerLabel} API key: `);
         if (newKey) {
           settings.llm.apiKey = newKey;
           console.log('✓ API key updated');
@@ -160,9 +158,7 @@ export async function runSetupWizard(currentSettings: Settings): Promise<Setting
       }
     } else {
       await ensureStdinReady();
-      const rl = createRL();
-      const newKey = await ask(rl, `Enter ${providerLabel} API key: `);
-      rl.close();
+      const newKey = await askMasked(`Enter ${providerLabel} API key: `);
       if (newKey) {
         settings.llm.apiKey = newKey;
         console.log('✓ API key set');

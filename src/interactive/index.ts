@@ -352,6 +352,72 @@ export function ask(rl: readline.Interface, question: string): Promise<string> {
 }
 
 /**
+ * Ask a question and mask input (for sensitive text like API keys)
+ */
+export function askMasked(question: string): Promise<string> {
+  return new Promise((resolve) => {
+    const stdin = process.stdin;
+    const stdout = process.stdout;
+    let value = '';
+
+    const wasRaw = (stdin as any).isRaw;
+
+    stdout.write(question);
+
+    if (stdin.setRawMode) {
+      stdin.setRawMode(true);
+    }
+    stdin.resume();
+
+    const cleanup = () => {
+      stdin.removeListener('data', onData);
+      if (stdin.setRawMode) {
+        stdin.setRawMode(wasRaw ?? false);
+      }
+      stdin.pause();
+    };
+
+    const onData = (chunk: Buffer) => {
+      const char = chunk.toString('utf8');
+
+      // Enter
+      if (chunk[0] === 13 || chunk[0] === 10) {
+        stdout.write('\n');
+        cleanup();
+        resolve(value.trim());
+        return;
+      }
+
+      // Ctrl+C
+      if (chunk[0] === 3) {
+        cleanup();
+        console.log('\n👋 Goodbye!\n');
+        process.exit(0);
+        return;
+      }
+
+      // Backspace
+      if (chunk[0] === 127 || chunk[0] === 8) {
+        if (value.length > 0) {
+          value = value.slice(0, -1);
+          stdout.write('\b \b');
+        }
+        return;
+      }
+
+      if (char) {
+        for (const ch of char) {
+          value += ch;
+          stdout.write('*');
+        }
+      }
+    };
+
+    stdin.on('data', onData);
+  });
+}
+
+/**
  * Show an interactive select menu with arrow keys
  */
 export async function selectMenu(
@@ -653,7 +719,7 @@ async function settingsMenu(settings: Settings): Promise<boolean> {
             }
           }
           await ensureStdinReady();
-          const apiKey = await ask(createRL(), `Enter ${settings.llm.provider.toUpperCase()} API key: `);
+          const apiKey = await askMasked(`Enter ${settings.llm.provider.toUpperCase()} API key: `);
           if (apiKey) {
             settings.llm.apiKey = apiKey;
             saveSettings(settings);
