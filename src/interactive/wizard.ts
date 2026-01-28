@@ -13,6 +13,32 @@ import {
 } from '../core/llm/providers.js';
 import { ask, selectMenu, createRL, ensureStdinReady } from './index.js';
 
+const CLOUD_PROVIDERS: LLMProvider[] = [
+  'openai',
+  'anthropic',
+  'gemini',
+  'mistral',
+  'cohere',
+  'xai',
+  'perplexity',
+];
+
+const OTHER_PROVIDER_GROUPS = [
+  { key: 'aggregator', label: 'Aggregators (OpenAI-compatible)' },
+  { key: 'local', label: 'Local / Self-hosted' },
+  { key: 'custom', label: 'Custom (OpenAI-compatible)' },
+] as const;
+
+type OtherProviderGroupKey = (typeof OTHER_PROVIDER_GROUPS)[number]['key'];
+
+function getOtherProviderOptions(group: OtherProviderGroupKey): LLMProvider[] {
+  if (group === 'custom') {
+    return ['openai_compatible'];
+  }
+
+  return getProvidersByCategory(group === 'aggregator' ? 'aggregator' : 'local');
+}
+
 /**
  * Run complete LLM setup wizard
  */
@@ -23,25 +49,42 @@ export async function runSetupWizard(currentSettings: Settings): Promise<Setting
   console.log('│  Let\'s configure your language model provider     │');
   console.log('╰───────────────────────────────────────────────────────╯\n');
 
-  // Step 1: Select provider category
-  console.log('Step 1 of 4: Select Provider Category\n');
-  const categoryChoice = await selectMenu(
-    'Select Category',
-    ['Cloud Providers', 'Aggregators (OpenAI-compatible)', 'Local / Self-hosted']
-  );
+  // Step 1: Select provider (cloud or others)
+  console.log('Step 1 of 4: Select Provider\n');
+  const cloudProviderOptions = CLOUD_PROVIDERS.map((p) => PROVIDERS[p].label);
 
-  let category: 'cloud' | 'aggregator' | 'local';
-  if (categoryChoice === 0) category = 'cloud';
-  else if (categoryChoice === 1) category = 'aggregator';
-  else category = 'local';
+  let selectedProvider: LLMProvider | null = null;
 
-  // Step 2: Select provider from category
-  const providersInCategory = getProvidersByCategory(category);
-  const providerOptions = providersInCategory.map((p) => PROVIDERS[p].label);
+  while (!selectedProvider) {
+    const providerChoice = await selectMenu('Select Cloud Provider', [
+      ...cloudProviderOptions,
+      'Others',
+    ]);
 
-  console.log('\nStep 2 of 4: Select Provider\n');
-  const providerChoice = await selectMenu(`Select ${category} Provider`, providerOptions);
-  const selectedProvider = providersInCategory[providerChoice];
+    if (providerChoice < CLOUD_PROVIDERS.length) {
+      selectedProvider = CLOUD_PROVIDERS[providerChoice];
+      break;
+    }
+
+    console.log('\nStep 2 of 4: Select Other Provider Category\n');
+    const otherChoice = await selectMenu(
+      'Select Category',
+      [...OTHER_PROVIDER_GROUPS.map((group) => group.label), 'Back']
+    );
+
+    if (otherChoice === OTHER_PROVIDER_GROUPS.length) {
+      console.clear();
+      continue;
+    }
+
+    const otherGroup = OTHER_PROVIDER_GROUPS[otherChoice].key;
+    const providersInGroup = getOtherProviderOptions(otherGroup);
+    const providerLabels = providersInGroup.map((p) => PROVIDERS[p].label);
+
+    console.log('\nStep 2 of 4: Select Provider\n');
+    const groupedChoice = await selectMenu('Select Provider', providerLabels);
+    selectedProvider = providersInGroup[groupedChoice];
+  }
   const providerInfo = getProviderInfo(selectedProvider);
 
   console.log(`\n✓ Selected: ${providerInfo.label}`);
@@ -52,7 +95,11 @@ export async function runSetupWizard(currentSettings: Settings): Promise<Setting
   // Step 3: Base URL configuration
   console.log('\nStep 3 of 4: Configure Base URL\n');
 
-  if (providerInfo.defaultBaseUrl) {
+  if (providerInfo.category === 'cloud' && providerInfo.defaultBaseUrl) {
+    settings.llm.baseUrl = providerInfo.defaultBaseUrl;
+    console.log(`Using default base URL for ${providerInfo.label}:`);
+    console.log(`  ${providerInfo.defaultBaseUrl}`);
+  } else if (providerInfo.defaultBaseUrl) {
     console.log(`Default base URL for ${providerInfo.label}:`);
     console.log(`  ${providerInfo.defaultBaseUrl}\n`);
 
@@ -158,11 +205,11 @@ export async function runSetupWizard(currentSettings: Settings): Promise<Setting
     console.log(`${providerInfo.label} has many available models`);
     console.log('Common examples:');
 
-    if (category === 'local') {
+    if (providerInfo.category === 'local') {
       console.log('  - llama3');
       console.log('  - qwen2.5');
       console.log('  - mistral');
-    } else if (category === 'aggregator') {
+    } else if (providerInfo.category === 'aggregator') {
       console.log('  - openai/gpt-4o-mini');
       console.log('  - anthropic/claude-3-5-sonnet');
       console.log('  - meta-llama/Llama-3.1-70b-instruct');

@@ -9,6 +9,7 @@ import { loadTranscript } from '../core/load.js';
 import { renderTextReport, renderJsonReport } from '../core/render.js';
 import { InspectConfig } from '../core/types.js';
 import type { LLMProvider } from '../core/llm/providers.js';
+import { getProvidersByCategory, getProviderInfo, PROVIDERS } from '../core/llm/providers.js';
 import { runSetupWizard } from './wizard.js';
 import { loadSettings, saveSettings, isLLMConfigured, getConfigStatus } from './settings.js';
 
@@ -21,6 +22,61 @@ export interface Settings {
     maxTokens: number;
     baseUrl?: string;
   };
+}
+
+const CLOUD_PROVIDERS: LLMProvider[] = [
+  'openai',
+  'anthropic',
+  'gemini',
+  'mistral',
+  'cohere',
+  'xai',
+  'perplexity',
+];
+
+const OTHER_PROVIDER_GROUPS = [
+  { key: 'aggregator', label: 'Aggregators (OpenAI-compatible)' },
+  { key: 'local', label: 'Local / Self-hosted' },
+  { key: 'custom', label: 'Custom (OpenAI-compatible)' },
+] as const;
+
+type OtherProviderGroupKey = (typeof OTHER_PROVIDER_GROUPS)[number]['key'];
+
+function getOtherProviderOptions(group: OtherProviderGroupKey): LLMProvider[] {
+  if (group === 'custom') {
+    return ['openai_compatible'];
+  }
+
+  return getProvidersByCategory(group === 'aggregator' ? 'aggregator' : 'local');
+}
+
+async function selectProvider(): Promise<LLMProvider> {
+  const cloudProviderOptions = CLOUD_PROVIDERS.map((p) => PROVIDERS[p].label);
+
+  while (true) {
+    const providerChoice = await selectMenu('Select Cloud Provider', [
+      ...cloudProviderOptions,
+      'Others',
+    ]);
+
+    if (providerChoice < CLOUD_PROVIDERS.length) {
+      return CLOUD_PROVIDERS[providerChoice];
+    }
+
+    const otherChoice = await selectMenu(
+      'Select Category',
+      [...OTHER_PROVIDER_GROUPS.map((group) => group.label), 'Back']
+    );
+    if (otherChoice === OTHER_PROVIDER_GROUPS.length) {
+      console.clear();
+      continue;
+    }
+    const otherGroup = OTHER_PROVIDER_GROUPS[otherChoice].key;
+    const providersInGroup = getOtherProviderOptions(otherGroup);
+    const providerLabels = providersInGroup.map((p) => PROVIDERS[p].label);
+    const groupedChoice = await selectMenu('Select Provider', providerLabels);
+    return providersInGroup[groupedChoice];
+  }
 }
 
 const BANNER_COLOR_ON = '\x1b[97m';
@@ -493,8 +549,12 @@ async function settingsMenu(settings: Settings): Promise<boolean> {
 
       case 1: // Change provider
         {
-          const providerChoice = await selectMenu('Select LLM Provider', ['OpenAI', 'Anthropic']);
-          settings.llm.provider = providerChoice === 0 ? 'openai' : 'anthropic';
+          const selectedProvider = await selectProvider();
+          settings.llm.provider = selectedProvider;
+          const providerInfo = getProviderInfo(selectedProvider);
+          if (providerInfo?.defaultBaseUrl) {
+            settings.llm.baseUrl = providerInfo.defaultBaseUrl;
+          }
           saveSettings(settings);
           console.log('\n✓ Provider updated to', settings.llm.provider);
           await ensureStdinReady();
