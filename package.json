@@ -1,10 +1,10 @@
 {
-  "name": "memograph-cli",
-  "version": "0.1.4",
+  "name": "@memograph/cli",
+  "version": "0.1.8",
   "description": "Local-first CLI tool for analyzing conversation transcripts and detecting memory drift",
   "main": "dist/cli.js",
   "bin": {
-    "memograph": "dist/cli.js"
+    "memograph": "./dist/index.js"
   },
   "scripts": {
     "dev": "tsx src/cli.ts",

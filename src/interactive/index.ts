@@ -5,7 +5,7 @@
 
 import * as readline from 'readline';
 import { inspectTranscript } from '../core/inspect.js';
-import { loadTranscript } from '../core/load.js';
+import { loadTranscript, normalizeTranscript } from '../core/load.js';
 import { renderTextReport, renderJsonReport } from '../core/render.js';
 import { InspectConfig } from '../core/types.js';
 import type { LLMProvider } from '../core/llm/providers.js';
@@ -101,6 +101,7 @@ const BANNER_FONT: Record<string, string[]> = {
   I: ['XXXX', '  X', '  X', '  X', 'XXXX'],
   ' ': ['', '', '', '', ''],
 };
+
 const BANNER_LOGO_TEXT = 'MEMOGRAPH CLI';
 const BANNER_TAGLINE = 'Analyze conversation transcripts for memory drift';
 
@@ -414,6 +415,29 @@ export function askMasked(question: string): Promise<string> {
     };
 
     stdin.on('data', onData);
+  });
+}
+
+/**
+ * Read multi-line input until a blank line is entered.
+ */
+export async function readMultilineInput(prompt: string): Promise<string> {
+  await ensureStdinReady();
+  console.log(prompt);
+  console.log('(Finish by entering a blank line)');
+
+  const rl = createRL();
+  const lines: string[] = [];
+
+  return new Promise((resolve) => {
+    rl.on('line', (line) => {
+      if (line.trim() === '') {
+        rl.close();
+        resolve(lines.join('\n'));
+      } else {
+        lines.push(line);
+      }
+    });
   });
 }
 
@@ -770,16 +794,35 @@ async function inspectTranscriptInteractive(settings: Settings): Promise<void> {
   }
 
   try {
-    // Get transcript path
-    await ensureStdinReady();
-    const path = await ask(createRL(), 'Enter path to transcript file: ');
+    // Get transcript input method
+    const inputChoice = await selectMenu('Transcript Input', [
+      'Enter file path',
+      'Paste transcript',
+      'Back to Home',
+    ]);
+
+    if (inputChoice === 2) {
+      console.clear();
+      return;
+    }
+
+    let transcript;
+
+    if (inputChoice === 0) {
+      await ensureStdinReady();
+      const path = await ask(createRL(), 'Enter path to transcript file: ');
+      transcript = await loadTranscript(path);
+    } else {
+      const pasted = await readMultilineInput('Paste transcript JSON below:');
+      const raw = JSON.parse(pasted);
+      transcript = normalizeTranscript(raw);
+    }
 
     // Get output format
     const formatChoice = await selectMenu('Output Format', ['Text (human-readable)', 'JSON (machine-readable)']);
     const asJson = formatChoice === 1;
 
     console.log('\n✓ Loading transcript...');
-    const transcript = await loadTranscript(path);
 
     console.log(`✓ Loaded transcript with ${transcript.messages.length} messages`);
     console.log('✓ Extracting facts using LLM...');
