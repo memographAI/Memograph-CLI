@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { LLMClient, LLMConfig, LLMProvider, createLLMClient } from '../src/core/llm/client.js';
+import { LLMClient, LLMConfig, createLLMClient } from '../src/core/llm/client.js';
 
 describe('LLMClient', () => {
   let mockOpenAI: any;

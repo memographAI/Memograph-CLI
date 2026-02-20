@@ -165,8 +165,16 @@ export interface InspectResult {
  * Configuration options for inspection (LLM-only)
  */
 export interface InspectConfig {
+  /** Analyze execution mode */
+  analyzeMode?: 'hosted' | 'llm';
   /** Maximum number of messages to process */
   max_messages?: number;
+  /** Hosted analyze API base URL */
+  apiUrl?: string;
+  /** Hosted analyze API request timeout (ms) */
+  apiTimeoutMs?: number;
+  /** Hosted analyze API retries */
+  apiRetries?: number;
   /** LLM configuration (required for LLM-based analysis) */
   llm?: {
     provider?: LLMProvider;

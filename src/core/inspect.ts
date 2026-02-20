@@ -3,6 +3,21 @@ import { calculateDriftScore, calculateTokenWaste } from './score.js';
 import { createLLMClient } from './llm/client.js';
 import { extractFactsLLM, extractFactsLLMBatched, extractFactsLLMFromRaw } from './llm/extract-llm.js';
 import { detectDriftLLM, detectDriftLLMBatched, detectDriftLLMFromRaw } from './llm/detect-llm.js';
+import { analyzeTranscriptHosted } from './hosted/analyze-client.js';
+
+function resolveAnalyzeMode(config: InspectConfig): 'hosted' | 'llm' {
+  if (config.analyzeMode) {
+    return config.analyzeMode;
+  }
+  const envMode = process.env.MEMOGRAPH_ANALYZE_MODE;
+  if (envMode === 'llm') {
+    return 'llm';
+  }
+  if (config.llm) {
+    return 'llm';
+  }
+  return 'hosted';
+}
 
 /**
  * Main inspection pipeline (LLM-based)
@@ -12,6 +27,8 @@ export async function inspectTranscript(
   transcript: Transcript,
   config: InspectConfig = {}
 ): Promise<InspectResult> {
+  const mode = resolveAnalyzeMode(config);
+
   const { messages } = transcript;
   const rawText = transcript.raw_text;
 
@@ -19,6 +36,21 @@ export async function inspectTranscript(
   const cappedMessages = config.max_messages
     ? messages.slice(0, config.max_messages)
     : messages;
+
+  if (mode === 'hosted') {
+    return analyzeTranscriptHosted(
+      {
+        ...transcript,
+        messages: cappedMessages,
+      },
+      {
+        apiUrl: config.apiUrl,
+        timeoutMs: config.apiTimeoutMs,
+        retries: config.apiRetries,
+        maxMessages: config.max_messages,
+      }
+    );
+  }
 
   // Create LLM client
   const llmConfig = config.llm || {};

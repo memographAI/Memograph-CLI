@@ -6,14 +6,21 @@
 import * as readline from 'readline';
 import { inspectTranscript } from '../core/inspect.js';
 import { loadTranscript, normalizeTranscript } from '../core/load.js';
+import { createProgressIndicator } from '../core/progress.js';
 import { renderTextReport, renderJsonReport } from '../core/render.js';
-import { InspectConfig } from '../core/types.js';
+import { InspectConfig, InspectResult } from '../core/types.js';
 import type { LLMProvider } from '../core/llm/providers.js';
 import { getProvidersByCategory, getProviderInfo, PROVIDERS } from '../core/llm/providers.js';
 import { runSetupWizard } from './wizard.js';
-import { loadSettings, saveSettings, isLLMConfigured, getConfigStatus } from './settings.js';
+import { loadSettings, saveSettings, isAnalyzeConfigured, getAnalyzeConfigStatus } from './settings.js';
 
 export interface Settings {
+  analyzeMode: 'hosted' | 'llm';
+  api: {
+    url: string;
+    timeoutMs: number;
+    retries: number;
+  };
   llm: {
     provider: LLMProvider;
     model: string;
@@ -552,21 +559,55 @@ function showBanner() {
 }
 
 /**
- * Check configuration and prompt wizard if needed
+ * Resolve analyze mode from settings + env
+ */
+function resolveAnalyzeMode(settings: Settings): 'hosted' | 'llm' {
+  if (process.env.MEMOGRAPH_ANALYZE_MODE === 'llm') {
+    return 'llm';
+  }
+  return settings.analyzeMode || 'hosted';
+}
+
+/**
+ * Check configuration and prompt for required setup if needed
  */
 async function checkAndPromptWizard(settings: Settings): Promise<boolean> {
-  const status = getConfigStatus(settings);
+  settings.analyzeMode = resolveAnalyzeMode(settings);
+  const status = getAnalyzeConfigStatus(settings);
   
   if (status.configured) {
     return true;
   }
 
   console.log(`\n❌ ${status.message}`);
-  console.log('\nAI model is not configured yet.');
+  const mode = resolveAnalyzeMode(settings);
+  console.log(`\n${mode === 'hosted' ? 'Analyze API' : 'AI model'} is not configured yet.`);
   
   // Ensure stdin is active and in the correct mode
   await ensureStdinReady();
-  
+
+  if (mode === 'hosted') {
+    const rl = createRL();
+    const response = await ask(rl, 'Set Analyze API URL now? (Y/n): ');
+    rl.close();
+
+    if (response.toLowerCase() === 'y' || response === '') {
+      await ensureStdinReady();
+      const rl2 = createRL();
+      const apiUrl = await ask(
+        rl2,
+        `Enter Analyze API URL (default: ${settings.api.url || 'https://ap-south-1-test.memograph.click/v1/analyze'}): `
+      );
+      rl2.close();
+      if (apiUrl.trim()) {
+        settings.api.url = apiUrl.trim();
+      }
+      saveSettings(settings);
+      return isAnalyzeConfigured(settings);
+    }
+    return false;
+  }
+
   const rl = createRL();
   const response = await ask(rl, 'Run Setup Wizard now? (Y/n): ');
   rl.close();
@@ -575,10 +616,10 @@ async function checkAndPromptWizard(settings: Settings): Promise<boolean> {
     console.clear();
     const newSettings = await runSetupWizard(settings);
     Object.assign(settings, newSettings);
+    settings.analyzeMode = 'llm';
     saveSettings(settings);
     
-    // Check again
-    return isLLMConfigured(settings);
+    return isAnalyzeConfigured(settings);
   }
 
   return false;
@@ -588,18 +629,25 @@ async function checkAndPromptWizard(settings: Settings): Promise<boolean> {
  * Display current settings
  */
 export function displaySettings(settings: Settings) {
+  const mode = resolveAnalyzeMode(settings);
   const maskedKey = settings.llm.apiKey
     ? settings.llm.apiKey.substring(0, 8) + '••••••••••••'
     : '(not set)';
 
   console.log('\n╭─ Current Settings ─────────────────────────────────────╮');
   console.log('│                                               │');
-  console.log(`│  ◆ LLM Provider:  ${settings.llm.provider.padEnd(20)}│`);
-  console.log(`│  ◆ LLM Model:      ${settings.llm.model.padEnd(20)}│`);
-  console.log(`│  ◆ Temperature:    ${String(settings.llm.temperature).padEnd(20)}│`);
-  console.log(`│  ◆ Max Tokens:     ${String(settings.llm.maxTokens).padEnd(20)}│`);
-  console.log(`│  ◆ Base URL:       ${(settings.llm.baseUrl || '(default)').padEnd(20)}│`);
-  console.log(`│  ◆ API Key:        ${maskedKey.padEnd(20)}│`);
+  console.log(`│  ◆ Analyze Mode:   ${mode.padEnd(20)}│`);
+  console.log(`│  ◆ API URL:        ${(settings.api.url || '(not set)').padEnd(20)}│`);
+  console.log(`│  ◆ API Timeout:    ${String(settings.api.timeoutMs).padEnd(20)}│`);
+  console.log(`│  ◆ API Retries:    ${String(settings.api.retries).padEnd(20)}│`);
+  if (mode === 'llm') {
+    console.log(`│  ◆ LLM Provider:   ${settings.llm.provider.padEnd(20)}│`);
+    console.log(`│  ◆ LLM Model:      ${settings.llm.model.padEnd(20)}│`);
+    console.log(`│  ◆ Temperature:    ${String(settings.llm.temperature).padEnd(20)}│`);
+    console.log(`│  ◆ Max Tokens:     ${String(settings.llm.maxTokens).padEnd(20)}│`);
+    console.log(`│  ◆ LLM Base URL:   ${(settings.llm.baseUrl || '(default)').padEnd(20)}│`);
+    console.log(`│  ◆ LLM API Key:    ${maskedKey.padEnd(20)}│`);
+  }
   console.log('│                                               │');
   console.log('╰──────────────────────────────────────────────────────╯\n');
 }
@@ -608,36 +656,166 @@ export function displaySettings(settings: Settings) {
  * Settings menu
  */
 async function settingsMenu(settings: Settings): Promise<boolean> {
-  const options = [
-    'Quick Setup (Wizard)',
-    'Change LLM Provider',
-    'Change LLM Model',
-    'Change Temperature',
-    'Change Max Tokens',
-    'Change Base URL',
-    'Set/Update API Key',
-    'Show raw config',
-    'Back to main menu',
-  ];
-
   while (true) {
+    const mode = resolveAnalyzeMode(settings);
+    settings.analyzeMode = mode;
+    const options = mode === 'hosted'
+      ? [
+          'Change Analyze Mode',
+          'Change API URL',
+          'Change API Timeout',
+          'Change API Retries',
+          'Advanced: LLM Setup (Legacy)',
+          'Show raw config',
+          'Back to main menu',
+        ]
+      : [
+          'Change Analyze Mode',
+          'Quick Setup (Wizard)',
+          'Change LLM Provider',
+          'Change LLM Model',
+          'Change Temperature',
+          'Change Max Tokens',
+          'Change Base URL',
+          'Set/Update API Key',
+          'Show raw config',
+          'Back to main menu',
+        ];
+
     const choice = await selectMenu('Settings', options);
 
-    switch (choice) {
-      case 0: // Quick setup wizard
-        {
+    if (mode === 'hosted') {
+      switch (choice) {
+        case 0: // Change mode
+          {
+            const modeChoice = await selectMenu('Select Analyze Mode', [
+              'hosted (default)',
+              'llm (legacy fallback)',
+            ]);
+            settings.analyzeMode = modeChoice === 0 ? 'hosted' : 'llm';
+            saveSettings(settings);
+            console.log('\n✓ Analyze mode updated to', settings.analyzeMode);
+            await ensureStdinReady();
+            await ask(createRL(), '\nPress Enter to continue...');
+          }
+          break;
+        case 1: // API URL
+          {
+            await ensureStdinReady();
+            const apiUrl = await ask(
+              createRL(),
+              `Enter Analyze API URL (current: ${settings.api.url}): `
+            );
+            if (apiUrl.trim()) {
+              settings.api.url = apiUrl.trim();
+              saveSettings(settings);
+              console.log('\n✓ API URL updated');
+            }
+            await ensureStdinReady();
+            await ask(createRL(), '\nPress Enter to continue...');
+          }
+          break;
+        case 2: // API timeout
+          {
+            await ensureStdinReady();
+            const timeout = await ask(
+              createRL(),
+              `Enter API timeout in ms (current: ${settings.api.timeoutMs}): `
+            );
+            const timeoutVal = parseInt(timeout, 10);
+            if (!isNaN(timeoutVal) && timeoutVal > 0) {
+              settings.api.timeoutMs = timeoutVal;
+              saveSettings(settings);
+              console.log('\n✓ API timeout updated');
+            } else if (timeout.trim()) {
+              console.log('\n❌ Invalid timeout value');
+            }
+            await ensureStdinReady();
+            await ask(createRL(), '\nPress Enter to continue...');
+          }
+          break;
+        case 3: // API retries
+          {
+            await ensureStdinReady();
+            const retries = await ask(
+              createRL(),
+              `Enter API retries (current: ${settings.api.retries}): `
+            );
+            const retriesVal = parseInt(retries, 10);
+            if (!isNaN(retriesVal) && retriesVal >= 0) {
+              settings.api.retries = retriesVal;
+              saveSettings(settings);
+              console.log('\n✓ API retries updated');
+            } else if (retries.trim()) {
+              console.log('\n❌ Invalid retries value');
+            }
+            await ensureStdinReady();
+            await ask(createRL(), '\nPress Enter to continue...');
+          }
+          break;
+        case 4: // Legacy wizard
+          {
+            console.clear();
+            const newSettings = await runSetupWizard(settings);
+            Object.assign(settings, newSettings);
+            settings.analyzeMode = 'llm';
+            saveSettings(settings);
+            console.clear();
+            displaySettings(settings);
+            await ensureStdinReady();
+            await ask(createRL(), '\nPress Enter to continue...');
+          }
+          break;
+        case 5: // Show raw config
+          {
+            const displayConfig = {
+              ...settings,
+              llm: {
+                ...settings.llm,
+                apiKey: settings.llm.apiKey
+                  ? settings.llm.apiKey.substring(0, 8) + '••••••••••'
+                  : '',
+              },
+            };
+            console.log('\nRaw configuration:');
+            console.log(JSON.stringify(displayConfig, null, 2));
+            await ensureStdinReady();
+            await ask(createRL(), '\nPress Enter to continue...');
+          }
+          break;
+        case 6: // Back
           console.clear();
-          const newSettings = await runSetupWizard(settings);
-          Object.assign(settings, newSettings);
-          saveSettings(settings);
-          console.clear();
-          displaySettings(settings);
-          await ensureStdinReady();
-          await ask(createRL(), '\nPress Enter to continue...');
-        }
-        break;
-
-      case 1: // Change provider
+          return true;
+      }
+    } else {
+      switch (choice) {
+        case 0: // Change mode
+          {
+            const modeChoice = await selectMenu('Select Analyze Mode', [
+              'hosted (default)',
+              'llm (legacy fallback)',
+            ]);
+            settings.analyzeMode = modeChoice === 0 ? 'hosted' : 'llm';
+            saveSettings(settings);
+            console.log('\n✓ Analyze mode updated to', settings.analyzeMode);
+            await ensureStdinReady();
+            await ask(createRL(), '\nPress Enter to continue...');
+          }
+          break;
+        case 1: // Quick setup wizard
+          {
+            console.clear();
+            const newSettings = await runSetupWizard(settings);
+            Object.assign(settings, newSettings);
+            settings.analyzeMode = 'llm';
+            saveSettings(settings);
+            console.clear();
+            displaySettings(settings);
+            await ensureStdinReady();
+            await ask(createRL(), '\nPress Enter to continue...');
+          }
+          break;
+        case 2: // Change provider
         {
           const selectedProvider = await selectProvider();
           settings.llm.provider = selectedProvider;
@@ -652,7 +830,7 @@ async function settingsMenu(settings: Settings): Promise<boolean> {
         }
         break;
 
-      case 2: // Change model
+      case 3: // Change model
         {
           const models = settings.llm.provider === 'openai'
             ? ['gpt-4o-mini (recommended)', 'gpt-4o', 'gpt-3.5-turbo', 'Custom...']
@@ -675,7 +853,7 @@ async function settingsMenu(settings: Settings): Promise<boolean> {
         }
         break;
 
-      case 3: // Change temperature
+      case 4: // Change temperature
         {
           await ensureStdinReady();
           const temp = await ask(createRL(), 'Enter temperature (0.0-1.0, default 0.3): ');
@@ -694,7 +872,7 @@ async function settingsMenu(settings: Settings): Promise<boolean> {
         }
         break;
 
-      case 4: // Change max tokens
+      case 5: // Change max tokens
         {
           await ensureStdinReady();
           const maxTokens = await ask(createRL(), 'Enter max tokens (default 4096): ');
@@ -713,7 +891,7 @@ async function settingsMenu(settings: Settings): Promise<boolean> {
         }
         break;
 
-      case 5: // Change base URL
+      case 6: // Change base URL
         {
           await ensureStdinReady();
           const baseUrl = await ask(createRL(), 'Enter base URL (or press Enter to clear): ');
@@ -729,7 +907,7 @@ async function settingsMenu(settings: Settings): Promise<boolean> {
         }
         break;
 
-      case 6: // Set API key
+      case 7: // Set API key
         {
           const currentKey = settings.llm.apiKey;
           if (currentKey) {
@@ -754,7 +932,7 @@ async function settingsMenu(settings: Settings): Promise<boolean> {
         }
         break;
 
-      case 7: // Show raw config
+      case 8: // Show raw config
         {
           const displayConfig = { ...settings };
           if (displayConfig.llm.apiKey) {
@@ -767,9 +945,10 @@ async function settingsMenu(settings: Settings): Promise<boolean> {
         }
         break;
 
-      case 8: // Back
+      case 9: // Back
         console.clear();
         return true;
+      }
     }
 
     console.clear();
@@ -822,19 +1001,45 @@ async function inspectTranscriptInteractive(settings: Settings): Promise<void> {
     const formatChoice = await selectMenu('Output Format', ['Text (human-readable)', 'JSON (machine-readable)']);
     const asJson = formatChoice === 1;
 
-    console.log('\n✓ Loading transcript...');
-
     console.log(`✓ Loaded transcript with ${transcript.messages.length} messages`);
-    console.log('✓ Extracting facts using LLM...');
+    const mode = resolveAnalyzeMode(settings);
 
     const config: InspectConfig = {
+      analyzeMode: mode,
       max_messages: 2000,
-      llm: settings.llm,
+      apiUrl: settings.api.url,
+      apiTimeoutMs: settings.api.timeoutMs,
+      apiRetries: settings.api.retries,
+      ...(mode === 'llm' ? { llm: settings.llm } : {}),
     };
 
-    const result = await inspectTranscript(transcript, config);
+    const progress = createProgressIndicator(
+      mode === 'hosted' ? 'Sending transcript to hosted Analyze API' : 'Extracting facts using LLM',
+      {
+        messages:
+          mode === 'hosted'
+            ? [
+                'Sending transcript to hosted Analyze API',
+                'Waiting for hosted analysis',
+                'Preparing drift report',
+              ]
+            : [
+                'Extracting facts using LLM',
+                'Detecting drift patterns',
+                'Scoring conversation quality',
+              ],
+      }
+    );
 
-    console.log('✓ Analysis complete!\n');
+    let result: InspectResult;
+    try {
+      result = await inspectTranscript(transcript, config);
+      progress.succeed('Analysis complete');
+    } catch (error) {
+      progress.fail('Analysis failed');
+      throw error;
+    }
+    console.log('');
 
     const output = asJson ? renderJsonReport(result) : renderTextReport(result);
     
@@ -858,6 +1063,9 @@ async function inspectTranscriptInteractive(settings: Settings): Promise<void> {
     resetStdinState();
     await ensureStdinReady();
   } catch (error) {
+    if (process.stdout.isTTY) {
+      process.stdout.write('\n');
+    }
     const errorMsg = '\n❌ Error: ' + (error instanceof Error ? error.message : 'Unknown error');
     
     // Use direct write with proper async handling
