@@ -16,7 +16,7 @@ export async function loadTranscript(path: string, maxMessages?: number): Promis
     if (error instanceof SyntaxError) {
       const content = await readFile(path, 'utf-8');
       return {
-        schema_version: 'raw',
+        schema_version: '1.0',
         messages: [],
         raw_text: content,
       };
@@ -24,7 +24,7 @@ export async function loadTranscript(path: string, maxMessages?: number): Promis
     if (error instanceof Error && error.message.includes('Invalid transcript')) {
       const content = await readFile(path, 'utf-8');
       return {
-        schema_version: 'raw',
+        schema_version: '1.0',
         messages: [],
         raw_text: content,
       };

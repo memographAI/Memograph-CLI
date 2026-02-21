@@ -30,6 +30,12 @@ memograph
 
 Launches a guided menu where you can load transcripts, view results, and manage settings — all with arrow-key navigation.
 
+When choosing **Enter file path**, interactive completion works like this:
+- `Tab` cycles through matching path suggestions.
+- `/` commits the selected directory and opens suggestions for the next segment.
+- `Enter` on a selected directory drills into it; `Enter` on a file confirms it.
+- Suggestions are redrawn in place below the input instead of printing repeatedly.
+
 ### CLI mode (for scripts and automation)
 
 ```bash
@@ -120,6 +126,46 @@ Options:
   --llm-temperature <temp>     LLM temperature (0.0-1.0, default: 0.3)
   --llm-max-tokens <tokens>    Max tokens for LLM response (default: 4096)
 ```
+
+## Shell completion
+
+Generate and install completion for your shell:
+
+### Bash
+
+```bash
+memograph completion bash > ~/.memograph-completion.bash
+echo 'source ~/.memograph-completion.bash' >> ~/.bashrc
+source ~/.bashrc
+```
+
+### Zsh
+
+```bash
+mkdir -p ~/.zsh/completions
+memograph completion zsh > ~/.zsh/completions/_memograph
+echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
+echo 'autoload -Uz compinit && compinit' >> ~/.zshrc
+source ~/.zshrc
+```
+
+### Fish
+
+```bash
+mkdir -p ~/.config/fish/completions
+memograph completion fish > ~/.config/fish/completions/memograph.fish
+```
+
+Optional shell UX tweaks for menu-style cycling:
+- **Bash (`~/.inputrc`)**:
+  ```bash
+  TAB: menu-complete
+  set show-all-if-ambiguous on
+  ```
+- **Zsh (`~/.zshrc`)**:
+  ```bash
+  bindkey '^I' menu-complete
+  ```
 
 ## Environment variables
 

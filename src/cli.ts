@@ -8,6 +8,7 @@ import { renderTextReport, renderJsonReport } from './core/render.js';
 import { createProgressIndicator } from './core/progress.js';
 import type { InspectResult } from './core/types.js';
 import { runInteractiveMode } from './interactive/index.js';
+import { getCompletionScript, type SupportedShell } from './completion/shell.js';
 
 const program = new Command();
 
@@ -138,6 +139,21 @@ program
     }
   });
 
+program
+  .command('completion')
+  .description('Generate shell completion script')
+  .argument('<shell>', 'target shell: bash, zsh, or fish')
+  .action((shell: string) => {
+    const normalizedShell = shell.toLowerCase();
+    if (normalizedShell !== 'bash' && normalizedShell !== 'zsh' && normalizedShell !== 'fish') {
+      console.error(`Unsupported shell: ${shell}. Expected one of: bash, zsh, fish.`);
+      process.exit(1);
+    }
+
+    const script = getCompletionScript(normalizedShell as SupportedShell);
+    console.log(script);
+  });
+
 // Check if we should launch interactive mode
 const args = process.argv.slice(2);
 
@@ -145,7 +161,9 @@ const args = process.argv.slice(2);
 const isHelpOrVersion = args.length === 1 && (args[0] === '-h' || args[0] === '--help' || args[0] === '-V' || args[0] === '--version');
 
 // Check if there's a command (inspect, interactive)
-const hasCommand = args.length > 0 && (args[0] === 'inspect' || args[0] === 'interactive' || args[0] === 'help');
+const hasCommand =
+  args.length > 0 &&
+  (args[0] === 'inspect' || args[0] === 'interactive' || args[0] === 'completion' || args[0] === 'help');
 
 if (!hasCommand && !isHelpOrVersion) {
   // No command provided, launch interactive mode

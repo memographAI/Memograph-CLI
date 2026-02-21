@@ -11,6 +11,16 @@ const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_RETRIES = 1;
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 
+class HostedApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'HostedApiError';
+    this.status = status;
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -81,7 +91,7 @@ async function callHostedApi(
         return callHostedApi(payload, options, attempt + 1);
       }
 
-      throw new Error(formatHttpError(response.status, errorBody));
+      throw new HostedApiError(formatHttpError(response.status, errorBody), response.status);
     }
 
     const data = (await response.json()) as unknown;
@@ -90,6 +100,9 @@ async function callHostedApi(
     }
     return data;
   } catch (error) {
+    if (error instanceof HostedApiError) {
+      throw error;
+    }
     if (error instanceof Error && error.name === 'AbortError') {
       const retryable = attempt < options.retries;
       if (retryable) {
@@ -110,6 +123,18 @@ async function callHostedApi(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function buildRawFallback(transcript: Transcript): string | null {
+  if (transcript.raw_text && transcript.raw_text.trim().length > 0) {
+    return transcript.raw_text;
+  }
+  if (!transcript.messages || transcript.messages.length === 0) {
+    return null;
+  }
+  const lines = transcript.messages.map((msg) => `${msg.role}: ${msg.content}`);
+  const rawText = lines.join('\n');
+  return rawText.trim().length > 0 ? rawText : null;
 }
 
 export async function analyzeTranscriptHosted(
@@ -133,6 +158,38 @@ export async function analyzeTranscriptHosted(
     },
   };
 
-  return callHostedApi(payload, { apiUrl, timeoutMs, retries }, 0);
-}
+  try {
+    return await callHostedApi(payload, { apiUrl, timeoutMs, retries }, 0);
+  } catch (error) {
+    const shouldFallback =
+      error instanceof HostedApiError &&
+      error.status === 400 &&
+      error.message.includes('Transcript format invalid') &&
+      transcript.messages &&
+      transcript.messages.length > 0;
 
+    if (!shouldFallback) {
+      throw error;
+    }
+
+    const rawText = buildRawFallback(transcript);
+    if (!rawText) {
+      throw error;
+    }
+
+    const fallbackPayload: HostedAnalyzeRequest = {
+      schema_version: transcript.schema_version || '1.0',
+      messages: [],
+      raw_text: rawText,
+      options: {
+        max_messages: options.maxMessages,
+      },
+      client: {
+        name: options.clientName || 'memograph-cli',
+        ...(options.clientVersion ? { version: options.clientVersion } : {}),
+      },
+    };
+
+    return callHostedApi(fallbackPayload, { apiUrl, timeoutMs, retries }, 0);
+  }
+}

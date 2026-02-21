@@ -13,6 +13,7 @@ import type { LLMProvider } from '../core/llm/providers.js';
 import { getProvidersByCategory, getProviderInfo, PROVIDERS } from '../core/llm/providers.js';
 import { runSetupWizard } from './wizard.js';
 import { loadSettings, saveSettings, isAnalyzeConfigured, getAnalyzeConfigStatus } from './settings.js';
+import { promptPathWithCycleAutocomplete } from './path-picker.js';
 
 export interface Settings {
   analyzeMode: 'hosted' | 'llm';
@@ -219,10 +220,11 @@ export function drainStdout(): Promise<void> {
 /**
  * Create a readline interface
  */
-export function createRL() {
+export function createRL(options?: { completer?: readline.Completer }) {
   return readline.createInterface({
     input: process.stdin,
     output: process.stdout,
+    ...(options?.completer ? { completer: options.completer } : {}),
   });
 }
 
@@ -989,12 +991,23 @@ async function inspectTranscriptInteractive(settings: Settings): Promise<void> {
 
     if (inputChoice === 0) {
       await ensureStdinReady();
-      const path = await ask(createRL(), 'Enter path to transcript file: ');
+      const path = await promptPathWithCycleAutocomplete({
+        prompt: 'Enter path to transcript file: ',
+      });
       transcript = await loadTranscript(path);
     } else {
       const pasted = await readMultilineInput('Paste transcript JSON below:');
-      const raw = JSON.parse(pasted);
-      transcript = normalizeTranscript(raw);
+      try {
+        const raw = JSON.parse(pasted);
+        transcript = normalizeTranscript(raw);
+      } catch (error) {
+        console.warn('Warning: Invalid transcript format. Analyzing as raw text.');
+        transcript = {
+          schema_version: '1.0',
+          messages: [],
+          raw_text: pasted,
+        };
+      }
     }
 
     // Get output format

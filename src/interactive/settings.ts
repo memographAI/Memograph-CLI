@@ -22,6 +22,7 @@ export const defaultSettings: Settings = {
   analyzeMode: 'hosted',
   api: {
     url: 'https://ap-south-1-test.memograph.click/api/v1/analyze',
+    // url: 'http://localhost:8080/api/v1/analyze',
     timeoutMs: 100000,
     retries: 1,
   },
